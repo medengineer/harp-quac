@@ -422,6 +422,7 @@ private:
         std::unique_ptr<quac::Device> device;
         harp::Device::Subscription subscription;
         std::string openPort;
+        std::string lastPort;
         uint8_t loopMask = 0;
         std::atomic<uint8_t> finished { 0 };
 
@@ -471,6 +472,7 @@ private:
                 {
                     if (job.type == Job::Port)
                     {
+                        lastPort = job.port;
                         ensure (job.port);
                     }
                     else if (job.type == Job::Stop)
@@ -479,12 +481,16 @@ private:
                         if (device != nullptr)
                             device->write (quac::DacAbort, quac::AnalogOutputs (0x0F));
                     }
-                    else if (device == nullptr)
-                    {
-                        LOGE ("Harp Quac: no device open.");
-                    }
                     else
                     {
+                        if (device == nullptr && ! lastPort.empty())
+                            ensure (lastPort);
+                        if (device == nullptr)
+                        {
+                            LOGE ("Harp Quac: no device open.");
+                            continue;
+                        }
+
                         const int token = epoch.load();
                         uint8_t touched = 0;
                         uint8_t started = 0;
@@ -508,8 +514,31 @@ private:
                 catch (const std::exception& error)
                 {
                     LOGE ("Harp Quac: ", error.what());
-                    if (job.type == Job::Port)
+                    const std::string port = openPort.empty() ? lastPort : openPort;
+                    const bool retryPlay = job.type == Job::Play && ! port.empty();
+                    closeDevice (device, subscription, openPort, loopMask);
+                    if (! retryPlay)
+                        continue;
+
+                    try
+                    {
+                        ensure (port);
+                        const int token = epoch.load();
+                        uint8_t started = 0;
+                        for (const auto& wave : job.waves)
+                        {
+                            if (epoch.load() != token || device == nullptr)
+                                break;
+                            if (startWave (*device, wave, job.loop, epoch, token))
+                                started = uint8_t (started | uint8_t (channelMask (wave.channel)));
+                        }
+                        loopMask = job.loop && epoch.load() == token ? started : uint8_t (0);
+                    }
+                    catch (const std::exception& retryError)
+                    {
+                        LOGE ("Harp Quac: ", retryError.what());
                         closeDevice (device, subscription, openPort, loopMask);
+                    }
                 }
             }
 

@@ -131,8 +131,17 @@ public:
     // Returns 0 on timeout, -1 on failure.
     int read(uint8_t* dest, int capacity) {
         DWORD n = 0;
-        if (!ReadFile(handle_, dest, DWORD(capacity), &n, nullptr)) return -1;
-        return int(n);
+        if (ReadFile(handle_, dest, DWORD(capacity), &n, nullptr)) return int(n);
+
+        const DWORD error = GetLastError();
+        // COMMTIMEOUTS often surface as ERROR_TIMEOUT rather than a zero-length read.
+        // A single timeout must not kill the reader; later writes would all fail.
+        if (error == ERROR_TIMEOUT || error == WAIT_TIMEOUT) return 0;
+
+        DWORD commError = 0;
+        ClearCommError(handle_, &commError, nullptr);
+        if (error == ERROR_OPERATION_ABORTED) return 0;
+        return -1;
     }
 
 private:
