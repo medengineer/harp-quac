@@ -69,9 +69,12 @@ QuacWave toWave (const Pattern& pattern)
     return wave;
 }
 
-float halfScale (float voltage)
+// Players are bipolar: output = 2 * vertical_shift ± amplitude.
+// A 0..V wave is amplitude V/2 centered at V/2, so the shift register is V/4.
+void unipolarLevels (float voltage, float& amplitude, float& verticalShift)
 {
-    return jlimit (0.0f, 10.0f, voltage) * 0.5f;
+    amplitude = jlimit (0.0f, 10.0f, voltage) * 0.5f;
+    verticalShift = amplitude * 0.5f;
 }
 
 uint32_t usFromMs (int64 milliseconds)
@@ -353,8 +356,7 @@ private:
             settings.cycles = (uint32_t) wave.cycles;
             settings.frequency = (uint32_t) jmax (1, wave.frequency);
             settings.update_frequency = 10000;
-            settings.amplitude = halfScale (wave.sineVoltage);
-            settings.vertical_shift = settings.amplitude;
+            unipolarLevels (wave.sineVoltage, settings.amplitude, settings.vertical_shift);
             settings.normalized_phase_shift = 0;
             if (loop)
             {
@@ -396,8 +398,7 @@ private:
             settings.cycles = (uint32_t) jmax (1, wave.repeats);
             settings.frequency = (uint32_t) jmax (1, (int) std::lround (1000.0 / periodMs));
             settings.update_frequency = 10000;
-            settings.amplitude = halfScale (wave.pulseVoltage);
-            settings.vertical_shift = settings.amplitude;
+            unipolarLevels (wave.pulseVoltage, settings.amplitude, settings.vertical_shift);
             settings.normalized_phase_shift = 0;
             settings.ramp_on_duration = usFromMs (rampOn);
             settings.pulse_width_duration = usFromMs (jmax (0, onMs - rampOn - rampOff));
